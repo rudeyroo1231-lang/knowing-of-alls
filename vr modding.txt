@@ -1,8 +1,54 @@
-Games like Gorilla Tag and Big Scary are built on the Unity game engine, which means they share the same internal layout and are hacked or modded using the exact same general methods. Instead of rewriting the entire game from scratch, modders use specialized tools to inject custom code directly into the active game while it is running on a PC or a standalone VR headset.
-How Modding and Hacking Works:
-• Mod loaders like BepInEx on PC or LemonLoader on standalone Quest headsets act as a bridge by waiting for the game to start up and then forcing it to load unapproved modification files.
-• Mod menus appear as floating virtual interfaces inside the headset once the custom files are injected, allowing players to click buttons with their VR controllers to instantly turn different hacks on or off.
-• Speed and flying hacks work by overriding the game's built-in physics rules, telling the engine to multiply the player's launch speed or freeze their position in mid-air to create invisible walking platforms.
-• Long arm mods intercept the tracking data from the VR controllers and trick the game engine into believing the player's hands are physically positioned several feet further away than they actually are.
-• Ghost monkey and trolling mods temporarily stop the headset from sending movement data to the game server, making the player appear completely frozen or invisible to everyone else in the lobby while they move around freely on their own screen.
-• Server exploit mods allow players to use virtual point-and-click tools that scan other users' hidden account IDs to spam report systems, force-join private lobbies, or crash specific rooms.
+HOW THE AI MONITORS AND STRUCTURES THE UNITY 3D DATA LAYER
+
+1. THE UNITY RUNTIME MEMORY TREE (WHAT DATA EXISTS)
+
+Every Gorilla Tag clone running inside the Unity 3D engine stores its active variables in a structured hierarchy. When a modder attempts to use a tool like Il2CppDumper, they are trying to read this specific layout. Your AI needs to understand this data structure to monitor it:
+
+- UnityEngine.SceneManagement (The Environment Data)
+  * Contains the active 3D GameObject instances, Mesh Colliders, and Layer masks (e.g., Layer 9 for environment collision, Layer 10 for Gorilla players).
+
+- GorillaLocomotion.Player (The Movement Data)
+  * Transform Component: Stores Vector3 data for position (X, Y, Z) and rotation.
+  * Rigidbody Component: Handles velocity vectors, acceleration, gravity scales, and mass constants.
+  * Sphere Colliders: Tracks the exact radius and spatial offsets of the hand triggers.
+
+- Photon.Pun.PhotonNetwork (The Network Data)
+  * Custom Room Properties: Key-value data tables synced across all connected clients.
+  * Photon View IDs: Unique integer trackers mapped to every individual monkey avatar in the lobby.
+
+
+2. THE DATA EXTRACTION MECHANICS (HOW THE DATA IS SCRAPED)
+
+To catch modders who are actively changing memory values inside `libil2cpp.so` or injecting scripts via BepInEx, the AI anti-cheat can run automated internal data sweeps at the engine level:
+
+- Reflection & Type Checking:
+  * The AI can scan the Unity assembly domain for unknown or unauthorized Types. If a modder drops a rogue `.dll` into the game, it will register new classes that do not exist in the official build manifest.
+
+- Direct Component Querying:
+  * Using functions like `GameObject.FindObjectsOfType<Player>()`, the AI continuously pulls the active data profiles of every player object in the scene to check if multiple instances of the player script are running (a common indicator of ghost/cloning hacks).
+
+
+3. DATA FLOW DIAGRAM: VANILLA VS. MODDED UNITY 3D
+
+The diagram below maps out how Unity 3D handles raw input data versus how a modded APK interrupts that data flow to inject cheats.
+
+[User VR Input] ---> (XR Input Namespace) ---> [Calculates Hand Velocity] 
+                                                        |
+                                                        v
+                                          [GorillaLocomotion.Player] 
+                                                        |
+       (VANILLA FLOW)                                   | (MODDED INTERRUPTION FLOW)
+              v                                         v
+ [Applies Vector3 Force to Rigidbody]       [Modder Overwrites Memory Offset]
+
+              |                                         |
+              v                                         v
+    [Standard Movement Velocity]           [Forces Illegal Velocity Multiplier]
+
+              |                                         |
+              v                                         v
+ [Sends Clean Position to Server]          [Sends Modified Position to Server]
+
+              |                                         |
+              v                                         v
+   (Allowed to stay in lobby)                (AI Flags Server Disconnect)
