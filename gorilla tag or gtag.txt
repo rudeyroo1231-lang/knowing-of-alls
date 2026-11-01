@@ -1,2 +1,34 @@
 gorrila tag is know as a game where you are a gorrila and you are in a forest enviourment and tag other players 
 gorrila tag is also known as gtag for short
+GORILLA TAG (GTAG) DETAILED BREAKDOWN:
+
+1. CORE GAME ENGINE & INFRASTRUCTURE
+- Engine: Built entirely in Unity, specifically utilizing the XR Interaction Toolkit for VR hand input.
+- Build Type: Uses Unity's IL2CPP (Intermediate Language to C++) backend for mobile optimization and performance.
+- Networking: Powered by Photon Unity Networking (PUN2) and Photon Voice for proximity audio synchronization.
+- Targeted Hardware: Runs natively on mobile Android VR systems (Meta Quest 1, 2, 3, Pro) at 90Hz to 120Hz, as well as PCVR via Steam.
+
+2. THE "LEGLESS" PHYSICS ENGINE (GORILLA LOCOMOTION)
+- The character avatar is just a floating primate head and torso with two arms. Virtual legs are omitted completely to prevent floor clipping bugs.
+- Locomotion rejects all traditional VR movement standards. Joysticks and teleportation pointers are entirely disabled.
+- Movement works by physical hand-to-surface collisions. Sphere colliders on the palm of the virtual hands interact directly with the game environment's mesh colliders.
+- When a hand collider collides with a surface, the game calculates the real-world physical velocity vector of the controller's motion.
+- It applies an equal and opposite force vector directly to the Rigidbody physics component of the Gorilla's main torso, propelling the player forward or upward.
+
+3. ADVANCED MOVEMENT PHENOMENA (HIGH SKILL CEILING)
+- Parallel Running: Staying flat to the ground and pushing horizontally to build maximum speed while keeping vertical bouncing minimal.
+- Pinch Climbing: Wrapping both arms around an object, squeezing, and shoving straight down to pull the body straight up.
+- Wall Climbing & Running: Using rapid, rhythmic angled shoves to bounce between two surfaces, or hitting a flat vertical wall parallel to stay suspended mid-air.
+- Branching: Stringing parkour routes perfectly through tree networks by matching momentum vectors seamlessly from branch to branch.
+- Verticaling / Lucying: Moving one or both hands in a hyper-fast circular motion against a flat vertical wall to climb straight up smoothly.
+
+4. DIEGETIC DESIGN SYSTEM (ZERO INTERFACE HOVER)
+- The game uses 100% diegetic user interfaces, meaning menus exist physically in the 3D environment rather than floating on a 2D screen.
+- Gorilla OS Computer: Changing rooms, switching usernames, looking at ban details, or picking servers require physically hitting oversized keyboard keys inside the central map stump.
+- The Organic Tutorial: New players drop into a deep cave upon launching the game. They must naturally learn to jump and climb out of the pit to gain access to the public game lobbies.
+- The Cosmestic Mall: Buying items uses an in-game currency called "Shiny Rocks" spent in a virtual shop, where players physically look in mirrors and place hats directly onto their model.
+
+5. AUDIO-VISUAL LOGISTICS
+- Graphics: Utilizes low-poly models, unlit/flat shaders, and pixelated textures mimicking PlayStation 1 era aesthetics.
+- Performance: The intentionally simple art style drastically minimizes draw calls, allowing mobile VR chipsets to run physics scripts at rock-solid framerates to mitigate motion sickness.
+- Spatial Audio: Photon Voice mimics real-world acoustics. Sound volume drops off over distance, and audio panning changes depending on whether another player is standing above, below, or behind you.
