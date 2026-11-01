@@ -1,0 +1,8 @@
+Games like Gorilla Tag and Big Scary are built on the Unity game engine, which means they share the same internal layout and are hacked or modded using the exact same general methods. Instead of rewriting the entire game from scratch, modders use specialized tools to inject custom code directly into the active game while it is running on a PC or a standalone VR headset.
+How Modding and Hacking Works:
+• Mod loaders like BepInEx on PC or LemonLoader on standalone Quest headsets act as a bridge by waiting for the game to start up and then forcing it to load unapproved modification files.
+• Mod menus appear as floating virtual interfaces inside the headset once the custom files are injected, allowing players to click buttons with their VR controllers to instantly turn different hacks on or off.
+• Speed and flying hacks work by overriding the game's built-in physics rules, telling the engine to multiply the player's launch speed or freeze their position in mid-air to create invisible walking platforms.
+• Long arm mods intercept the tracking data from the VR controllers and trick the game engine into believing the player's hands are physically positioned several feet further away than they actually are.
+• Ghost monkey and trolling mods temporarily stop the headset from sending movement data to the game server, making the player appear completely frozen or invisible to everyone else in the lobby while they move around freely on their own screen.
+• Server exploit mods allow players to use virtual point-and-click tools that scan other users' hidden account IDs to spam report systems, force-join private lobbies, or crash specific rooms.
