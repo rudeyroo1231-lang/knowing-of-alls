@@ -52,3 +52,6 @@ The diagram below maps out how Unity 3D handles raw input data versus how a modd
               |                                         |
               v                                         v
    (Allowed to stay in lobby)                (AI Flags Server Disconnect)
+
+in quick words if u want to mod a gtag fangame
+first you need to decompile using apkeasytool or apktoolkit or other decompiling programms then after that you need to need to edit the files in data unity 3d so go to decompiled apk folder then go to the bin folder  then go to data then managed then open dataunity.3d in unity bundel asset extractor (uabe) then after that you select level 0 if that dosent appear dont worry go into uabe then go to hierarchy then u have the games info and stuff and u can edit the scale and thing just renenbers to not break a single thing or it will ruin the entire thing
