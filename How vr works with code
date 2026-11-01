@@ -1,0 +1,406 @@
+# How VR Works (Code Reference, Unity)
+
+A practical reference for what VR is doing under the hood and how you write code for it in Unity. Examples use C# and the XR Interaction Toolkit / Input System, with notes on multiplayer (Photon) at the end.
+
+---
+
+## 1. The Big Picture
+
+Every VR frame, the same loop runs (typically 72-120 times per second):
+
+```
+1. Runtime reads sensors  -> headset + controller poses (position + rotation)
+2. Your code reads poses  -> moves the rig, hands, head in the scene
+3. Your code reads input  -> buttons, triggers, thumbsticks, grip
+4. Game logic runs        -> physics, locomotion, interactions
+5. Engine renders TWICE   -> one image per eye, slightly offset
+6. Runtime warps + shows  -> reprojection fixes late head movement
+```
+
+Key idea: **the headset and controllers are just tracked transforms.** The XR runtime (OpenXR, Oculus, SteamVR) gives you a position and rotation for each device every frame. Everything else is normal game code.
+
+---
+
+## 2. The Stack
+
+| Layer | What it does | Examples |
+|---|---|---|
+| Hardware | Sensors, displays, controllers | Quest, Index, Pico |
+| XR Runtime | Tracking, compositor, lens distortion, reprojection | OpenXR runtime, Meta runtime, SteamVR |
+| Unity XR Plugin | Bridges runtime to Unity | OpenXR Plugin, Oculus XR Plugin |
+| Unity XR Subsystems | `XRInputSubsystem`, `XRDisplaySubsystem` | built in |
+| Input layer | Maps device data to actions | Input System, `InputDevices` |
+| Toolkit (optional) | Ready-made rig, grabbing, locomotion | XR Interaction Toolkit |
+| Your game | Everything else | |
+
+---
+
+## 3. Project Setup Checklist
+
+1. **Package Manager**: install `XR Plugin Management`, `OpenXR` (or Oculus XR Plugin), `XR Interaction Toolkit`, and `Input System`.
+2. **Project Settings > XR Plug-in Management**: tick OpenXR (PC and/or Android tabs).
+3. **OpenXR settings**: add Interaction Profiles (Oculus Touch, Valve Index, etc.).
+4. **Player settings (Android/Quest)**: IL2CPP, ARM64, Minimum API 29+, Vulkan or OpenGLES3, disable "Optimized Frame Pacing" issues if stuttering.
+5. **Color space**: Linear.
+6. **Rendering**: Single Pass Instanced (or Multiview on Android) for performance.
+
+---
+
+## 4. The XR Rig (Scene Hierarchy)
+
+A VR player is a hierarchy of transforms. The camera and hands are **children of a rig root**, and the tracking data moves them relative to that root.
+
+```
+XR Origin (Rig root)            <- YOU move this to locomote
+ └─ Camera Offset               <- height offset (floor vs. eye level)
+     ├─ Main Camera (Head)      <- tracked: headset pose, has TrackedPoseDriver
+     ├─ LeftHand Controller     <- tracked: left controller pose
+     └─ RightHand Controller    <- tracked: right controller pose
+```
+
+Critical rule: **never move the Main Camera directly.** Its local position/rotation is overwritten by tracking every frame. To move the player, move the **rig root**.
+
+### Tracked Pose Driver
+This component copies the device pose onto a transform:
+
+```csharp
+// Conceptually, TrackedPoseDriver does this every Update/before render:
+transform.localPosition = devicePosition;
+transform.localRotation = deviceRotation;
+```
+
+If a head or hand reference is "unassigned" in your scripts, the usual causes are: the script expects a transform you never dragged in, or the rig was replaced/prefab-swapped and references broke. Always verify the Inspector fields point to the *tracked* transforms (Main Camera, LeftHand, RightHand), not a mesh.
+
+---
+
+## 5. Reading Device Poses Manually
+
+You normally let TrackedPoseDriver handle this, but here is the raw API:
+
+```csharp
+using UnityEngine;
+using UnityEngine.XR;
+using System.Collections.Generic;
+
+public class ReadPoses : MonoBehaviour
+{
+    void Update()
+    {
+        if (TryGetPose(XRNode.Head, out Vector3 headPos, out Quaternion headRot))
+            Debug.Log($"Head: {headPos} {headRot.eulerAngles}");
+
+        if (TryGetPose(XRNode.RightHand, out Vector3 rPos, out Quaternion rRot))
+            Debug.Log($"Right hand: {rPos}");
+    }
+
+    bool TryGetPose(XRNode node, out Vector3 pos, out Quaternion rot)
+    {
+        pos = default; rot = default;
+        InputDevice device = InputDevices.GetDeviceAtXRNode(node);
+        if (!device.isValid) return false;
+
+        bool p = device.TryGetFeatureValue(CommonUsages.devicePosition, out pos);
+        bool r = device.TryGetFeatureValue(CommonUsages.deviceRotation, out rot);
+        return p && r;
+    }
+}
+```
+
+Positions are **local to the tracking space (the rig)**, in meters. To get world position, use the transform that TrackedPoseDriver drives (`transform.position`), not the raw value.
+
+---
+
+## 6. Reading Controller Input
+
+### Old-style (`InputDevices`)
+```csharp
+InputDevice right = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+
+right.TryGetFeatureValue(CommonUsages.trigger, out float trigger);          // 0..1
+right.TryGetFeatureValue(CommonUsages.grip, out float grip);                // 0..1
+right.TryGetFeatureValue(CommonUsages.primaryButton, out bool a);           // A / X
+right.TryGetFeatureValue(CommonUsages.secondaryButton, out bool b);         // B / Y
+right.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 stick);    // thumbstick
+right.TryGetFeatureValue(CommonUsages.primary2DAxisClick, out bool stickClick);
+```
+
+### New Input System (`InputActionReference`)
+```csharp
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+public class JumpOnButton : MonoBehaviour
+{
+    [SerializeField] InputActionReference jumpAction;   // e.g. <XRController>{RightHand}/primaryButton
+    [SerializeField] InputActionReference moveAction;   // e.g. <XRController>{LeftHand}/thumbstick
+
+    void OnEnable()  { jumpAction.action.Enable(); moveAction.action.Enable(); jumpAction.action.performed += OnJump; }
+    void OnDisable() { jumpAction.action.performed -= OnJump; }
+
+    void OnJump(InputAction.CallbackContext ctx) => Debug.Log("Jump!");
+
+    void Update()
+    {
+        Vector2 move = moveAction.action.ReadValue<Vector2>();
+    }
+}
+```
+
+### Haptics
+```csharp
+InputDevice right = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+if (right.TryGetHapticCapabilities(out var caps) && caps.supportsImpulse)
+    right.SendHapticImpulse(0, 0.5f, 0.1f);   // channel, amplitude 0..1, seconds
+```
+
+---
+
+## 7. Rendering: How Stereo Works
+
+- The engine renders the scene **twice per frame**, once per eye, from two cameras offset by the IPD (about 63 mm).
+- **Single Pass Instanced**: one draw call renders both eyes using GPU instancing. Much cheaper than Multi-Pass.
+- **Foveated rendering**: lower resolution at the edges of the view (fixed or eye-tracked).
+- **Late latching / reprojection** (ASW, Spacewarp): the runtime adjusts the final image to the latest head pose or synthesizes frames if you miss budget.
+
+Shaders must be stereo-aware. If a custom shader looks wrong in one eye, it is usually missing the instancing macros:
+
+```hlsl
+UNITY_VERTEX_INPUT_INSTANCE_ID
+UNITY_SETUP_INSTANCE_ID(v);
+UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
+```
+
+**Frame budget**: 90 Hz = 11.1 ms per frame. 72 Hz = 13.9 ms. Missing it causes judder and motion sickness, so performance is a comfort feature, not just polish.
+
+---
+
+## 8. Locomotion Patterns
+
+### 8a. Smooth thumbstick movement (move the rig relative to head facing)
+```csharp
+public class SmoothMove : MonoBehaviour
+{
+    [SerializeField] Transform rig;        // XR Origin root
+    [SerializeField] Transform head;       // Main Camera
+    [SerializeField] float speed = 2f;
+    [SerializeField] InputActionReference moveAction;
+
+    void Update()
+    {
+        Vector2 input = moveAction.action.ReadValue<Vector2>();
+        Vector3 forward = Vector3.ProjectOnPlane(head.forward, Vector3.up).normalized;
+        Vector3 right   = Vector3.ProjectOnPlane(head.right,   Vector3.up).normalized;
+        rig.position += (forward * input.y + right * input.x) * speed * Time.deltaTime;
+    }
+}
+```
+
+### 8b. Snap turn (comfort option)
+```csharp
+void SnapTurn(float degrees)
+{
+    // Rotate around the HEAD position, not the rig origin, so the player doesn't swing away
+    rig.RotateAround(head.position, Vector3.up, degrees);
+}
+```
+
+### 8c. Teleport
+Raycast/arc from the hand, validate a surface, then move the rig so the **head** lands at the target:
+
+```csharp
+void TeleportTo(Vector3 target)
+{
+    Vector3 headOffset = head.position - rig.position;
+    headOffset.y = 0;
+    rig.position = target - headOffset;
+}
+```
+
+### 8d. Physics / arm-swing locomotion (Gorilla Tag style)
+Hands are physics colliders (often on a Rigidbody or SphereCast). When a hand touches a surface, you push the **rig** opposite to the hand's movement:
+
+```csharp
+// Simplified idea, per hand, every FixedUpdate:
+Vector3 handDelta = handTarget.position - lastHandPos;       // how far the real hand moved
+if (handTouchingSurface)
+{
+    // Move the whole player opposite to the hand so the hand "sticks" to the surface
+    rigidbody.velocity = -handDelta / Time.fixedDeltaTime;
+}
+```
+
+Core pieces of this pattern:
+1. A **tracked target** transform per hand (follows the real controller).
+2. A **physical hand** (collider) that tries to follow the target but gets blocked by walls.
+3. The **difference** between target and physical hand tells you how hard the player is pushing.
+4. Apply that difference to the rig/body Rigidbody.
+5. Cap velocity and handle jump/slide surfaces separately.
+
+### 8e. Head collision (prevent walking through walls)
+Put a small sphere collider on the head. If the head would enter geometry, push the rig back (or fade the screen to black). Without this, players can lean through walls.
+
+---
+
+## 9. Interaction: Grabbing Objects
+
+With XR Interaction Toolkit:
+- Add `XR Grab Interactable` to the object (needs a Collider + Rigidbody).
+- Add `XR Direct Interactor` (touch) or `XR Ray Interactor` (point) to each hand.
+- Subscribe to events:
+
+```csharp
+var grab = GetComponent<XRGrabInteractable>();
+grab.selectEntered.AddListener(args => Debug.Log("Grabbed by " + args.interactorObject));
+grab.selectExited.AddListener(args => Debug.Log("Released"));
+grab.activated.AddListener(args => Debug.Log("Trigger pulled while held"));
+```
+
+Manual grab (no toolkit):
+```csharp
+// On grip press: find overlapping object, parent it or attach a FixedJoint.
+Collider[] hits = Physics.OverlapSphere(hand.position, 0.1f);
+// ...pick closest with a Rigidbody, then:
+joint = gameObject.AddComponent<FixedJoint>();
+joint.connectedBody = targetRb;
+// On release: Destroy(joint); targetRb.velocity = handVelocity;  // throw
+```
+
+To throw convincingly, track hand velocity over the last few frames and apply it (plus angular velocity) on release.
+
+---
+
+## 10. Common Components Cheat Sheet
+
+| Need | Component / API |
+|---|---|
+| Head/hand follows device | `TrackedPoseDriver` (Input System) |
+| Player root | `XROrigin` |
+| Controller input values | `InputDevices` / `InputActionReference` |
+| Haptics | `SendHapticImpulse` |
+| Grabbing | `XRGrabInteractable` |
+| UI pointing | `XRRayInteractor` + `TrackedDeviceGraphicRaycaster` on the Canvas |
+| Recenter | `XRInputSubsystem.TryRecenter()` |
+| Check VR active | `XRSettings.isDeviceActive`, `XRSettings.loadedDeviceName` |
+| Refresh rate | `XRDevice` / `OVRManager.display.displayFrequency` (Oculus) |
+
+### VR UI
+Use a **World Space** Canvas, 0.001-0.003 scale, 1.5-3 m from the player, with `TrackedDeviceGraphicRaycaster` and an `XRUIInputModule` on the EventSystem. Never use Screen Space Overlay in VR; it does not render in stereo.
+
+---
+
+## 11. Multiplayer VR with Photon (PUN / PhotonVR pattern)
+
+Each networked player only needs to sync **three transforms**: head, left hand, right hand, plus the body/rig position. Everyone else sees a puppet driven by those values.
+
+```
+Local player (owner)                     Remote players (copies)
+-----------------------                  -------------------------
+Rig tracked by real devices      --->    Avatar with Head / LeftHand / RightHand
+Head/Hand transforms read from           transforms driven by received data
+the rig every frame                      (interpolated for smoothness)
+```
+
+Pattern:
+
+```csharp
+public class VRPlayerSync : MonoBehaviourPun, IPunObservable
+{
+    [Header("Local rig targets (assigned for the owner)")]
+    public Transform headTarget, leftHandTarget, rightHandTarget;
+
+    [Header("Avatar parts (what other players see)")]
+    public Transform headModel, leftHandModel, rightHandModel;
+
+    void Update()
+    {
+        if (photonView.IsMine)
+        {
+            // Owner: copy from the real tracked rig onto the avatar
+            headModel.SetPositionAndRotation(headTarget.position, headTarget.rotation);
+            leftHandModel.SetPositionAndRotation(leftHandTarget.position, leftHandTarget.rotation);
+            rightHandModel.SetPositionAndRotation(rightHandTarget.position, rightHandTarget.rotation);
+        }
+        // Remote copies are updated in OnPhotonSerializeView below
+    }
+
+    public void OnPhotonSerializeView(PhotonStream stream, PhotonMessageInfo info)
+    {
+        if (stream.IsWriting)
+        {
+            stream.SendNext(headModel.position);      stream.SendNext(headModel.rotation);
+            stream.SendNext(leftHandModel.position);  stream.SendNext(leftHandModel.rotation);
+            stream.SendNext(rightHandModel.position); stream.SendNext(rightHandModel.rotation);
+        }
+        else
+        {
+            headModel.SetPositionAndRotation((Vector3)stream.ReceiveNext(), (Quaternion)stream.ReceiveNext());
+            leftHandModel.SetPositionAndRotation((Vector3)stream.ReceiveNext(), (Quaternion)stream.ReceiveNext());
+            rightHandModel.SetPositionAndRotation((Vector3)stream.ReceiveNext(), (Quaternion)stream.ReceiveNext());
+        }
+    }
+}
+```
+
+Important details:
+- **Only the owner reads tracking.** Remote copies must never have a `TrackedPoseDriver` or they will fight with the network data. Disable or destroy tracking components when `!photonView.IsMine`.
+- **Order matters** in `OnPhotonSerializeView`: read in the exact order you wrote.
+- Add a `PhotonView` to the avatar root and drag this script into its Observed Components.
+- Smooth remote motion by lerping toward the received target instead of snapping.
+- Use `PhotonNetwork.Instantiate` with a prefab in a `Resources` folder so everyone spawns the player.
+- Bandwidth: send at 10-20 Hz and interpolate; quantize rotations if needed.
+
+### Typical "unassigned Head / Hand" bug
+The networked avatar prefab has `headTarget` etc. fields that only get filled for the **local** player at spawn. Fix by finding the local rig after instantiation:
+
+```csharp
+void Start()
+{
+    if (photonView.IsMine)
+    {
+        var rig = FindObjectOfType<XROrigin>();
+        headTarget      = rig.Camera.transform;
+        leftHandTarget  = rig.transform.Find("Camera Offset/LeftHand Controller");
+        rightHandTarget = rig.transform.Find("Camera Offset/RightHand Controller");
+    }
+    else
+    {
+        // Remote copy: no tracking, just visuals
+        foreach (var d in GetComponentsInChildren<UnityEngine.InputSystem.XR.TrackedPoseDriver>())
+            d.enabled = false;
+    }
+}
+```
+
+---
+
+## 12. Comfort and Performance Rules
+
+- Hit your target frame rate or reduce quality; dropped frames cause nausea.
+- Avoid moving the camera independent of the player's head (forced camera motion).
+- Offer snap turning and vignette during smooth movement.
+- Keep UI readable: at least 1.5 m away, large text.
+- Avoid heavy post-processing on mobile VR (Quest): skip bloom, SSAO, and high MSAA beyond 4x.
+- Use baked lighting, light probes, GPU instancing, occlusion culling, and LODs.
+- Profile on the headset, not the editor.
+
+---
+
+## 13. Debugging Checklist
+
+| Symptom | Likely cause |
+|---|---|
+| Head/hand "unassigned" or null | Inspector reference not set, prefab swapped, or finding rig before it exists |
+| Hands in wrong place | Wrong tracking origin mode (Floor vs Device), or hand is not under Camera Offset |
+| Player floor too low/high | Tracking Origin Mode mismatch; set `Floor` on the XROrigin |
+| Camera doesn't move | No `TrackedPoseDriver`, XR plugin not enabled, or no active interaction profile |
+| One eye black / shader broken | Shader lacks stereo instancing macros |
+| Controllers not detected | Missing OpenXR Interaction Profile, or Input Actions not enabled |
+| Remote player jittery | No interpolation, or both TrackedPoseDriver and network driving the same transform |
+| Works in editor, not on Quest | Android XR plugin not ticked, wrong graphics API, or missing permissions |
+| Motion sickness | Low FPS, forced rotation, or acceleration without a comfort option |
+
+---
+
+## 14. Quick Mental Model
+
+> A VR game is a normal game where the **camera and hands are driven by hardware**. You never "move the head"; you move the **rig** and let tracking place the head and hands inside it. Everything else (physics, input, networking, UI) is standard game code that happens to read poses from three tracked transforms.
