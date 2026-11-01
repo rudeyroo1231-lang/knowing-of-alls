@@ -1,0 +1,23 @@
+how modded apks are made and how they bypass anti-cheats:
+
+1. THE APK IS UNPACKED
+- modders grab the .apk file of the fangame and run it through tools like apk toolkit or mt manager.
+- this extracts the game into a raw folder of files, assets, and folders on their pc.
+
+2. RUNNING THE CODE DUMPER
+- unity games on android use a specific backend called il2cpp. this compiles the game's c# code into a c++ file called libil2cpp.so.
+- modders take that .so file along with the global-metadata.dat file and run them through a program called il2cppdumper.
+- this spits out a big text file showing every single function in the game, like player speeds, jumps, gravity, and even the anti-cheat functions, along with their exact memory locations (offsets).
+
+3. INJECTING THE MOD MENU
+- once they know the memory locations, they write a custom c++ cheat menu script.
+- they compile this script into a new library file and force it into the apk's files.
+- they edit the app's startup code so the moment you launch the game, the cheat menu injects itself straight into the game engine.
+
+4. HOW THEY BYPASS THE ANTI-CHEAT
+- option A (asset deleting): if the anti-cheat is just a script sitting in the unity scene, they open the game assets with a tool like uabea, find the anti-cheat object, and turn its active state to "false" so it never turns on.
+- option B (hex editing): if the anti-cheat is built into the code, they look up the anti-cheat function in their dumper text file, find its exact memory address, and use a hex editor to overwrite the code so the check always returns a safe, clean result.
+- option C (bypass libs): they inject pre-made bypass files that hook into the game at runtime and automatically block calls like "application.quit()" so the anti-cheat cannot kick or close the game.
+
+5. SIGNING AND PACKING
+- once everything is edited, they compile the folder back into a single .apk file, digitally sign it so the quest headset accepts it, and install it.
