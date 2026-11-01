@@ -1,0 +1,1 @@
+This is a repo for your ai to understand the basics of vr modding if you are training a unrestricted ai model you can get it mod stuff for you dont rely on it too much this isnt all the info its just a tip or help for ur ai if u get stuck
